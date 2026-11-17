@@ -1,10 +1,174 @@
-genescope/
-│
-├── index.html
-├── style.css
-├── app.js
-├── vercel.json
-├── requirements.txt
-│
-└── api/
-    └── analyze.py
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GeneScope | DNA Sequence Lab</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#081426;color:#eaf2fb;font-family:Arial,sans-serif}
+.container{max-width:1150px;margin:auto;padding:30px 20px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px}
+h1{color:#4bd8df;margin:0;font-size:28px}
+.subtitle{color:#91a6bd;font-size:13px}
+.tag{border:1px solid #25445d;padding:8px 12px;border-radius:20px;color:#65d6a2;font-size:11px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+.card,.panel{background:#102139;border:1px solid #233b55;border-radius:12px;padding:18px}
+.stat{font-size:25px;font-weight:bold;margin-top:10px}
+small,.muted{color:#91a6bd}
+.workspace{display:grid;grid-template-columns:1fr 1fr;gap:15px}
+h2{font-size:17px;margin:0 0 18px}
+label{display:block;font-size:11px;color:#a9bed2;margin:13px 0 7px}
+textarea,input,select{width:100%;padding:12px;background:#09182a;color:#dffaff;border:1px solid #29445f;border-radius:7px;font-family:monospace}
+textarea{height:110px;resize:vertical;line-height:1.7}
+button{background:#4bd8df;color:#06202a;border:0;border-radius:7px;padding:12px 16px;font-weight:bold;cursor:pointer;margin-top:12px}
+button:hover{opacity:.85}
+.secondary{background:#1a3a50;color:#4bd8df}
+.result{margin-top:15px;padding:13px;background:#09182a;border-radius:8px;line-height:1.8;overflow-wrap:anywhere}
+.hidden{display:none}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:12px}
+td,th{text-align:left;padding:9px;border-bottom:1px solid #29445f}
+th{color:#91a6bd}
+.good{color:#65d6a2}.warn{color:#f4bd69}.bad{color:#ff8e9a}
+.tools{margin-top:16px}
+.toolgrid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+footer{text-align:center;color:#91a6bd;font-size:11px;padding:25px}
+@media(max-width:750px){.grid{grid-template-columns:1fr 1fr}.workspace,.toolgrid{grid-template-columns:1fr}header{gap:10px;flex-wrap:wrap}}
+</style>
+</head>
+<body>
+<div class="container">
+<header>
+<div>
+<h1>✳ GeneScope</h1>
+<div class="subtitle">DNA SEQUENCE ANALYSIS LAB</div>
+</div>
+<div class="tag">● EDUCATIONAL DEMO</div>
+</header>
+
+<div class="grid">
+<div class="card"><small>REFERENCE LENGTH</small><div class="stat" id="refLength">—</div><small>Base pairs</small></div>
+<div class="card"><small>SAMPLE LENGTH</small><div class="stat" id="sampleLength">—</div><small>Base pairs</small></div>
+<div class="card"><small>GC CONTENT</small><div class="stat" id="gc">—</div><small>Guanine + Cytosine</small></div>
+<div class="card"><small>DIFFERENCES</small><div class="stat" id="difference">—</div><small>Detected variations</small></div>
+</div>
+
+<div class="workspace">
+<section class="panel">
+<h2>01 / Sequence Input</h2>
+<label>REFERENCE DNA SEQUENCE</label>
+<textarea id="reference">ATGCGTACGTTAGCTAGGCTA</textarea>
+<label>SAMPLE DNA SEQUENCE</label>
+<textarea id="sample">ATGCGTTCGTTAGCTAGGCTA</textarea>
+<button onclick="analyze()">Analyze Sequences →</button>
+<button class="secondary" onclick="example()">Load Example</button>
+<div id="error" class="bad"></div>
+</section>
+
+<section class="panel">
+<h2>02 / Mutation Analysis</h2>
+<div id="summary" class="result">Waiting for analysis. Enter your sequences and click Analyze.</div>
+<div id="mutationTable"></div>
+<div id="alignment" class="result hidden"></div>
+<button class="secondary" onclick="downloadReport()">Download Report ↓</button>
+</section>
+</div>
+
+<section class="panel tools">
+<h2>03 / DNA Pattern Finder</h2>
+<div class="toolgrid">
+<div>
+<label>DNA SEQUENCE PATTERN TO FIND</label>
+<input id="pattern" value="ATG" maxlength="100">
+<button onclick="findPattern()">Search Pattern →</button>
+<div id="findResult" class="result">Search for any DNA pattern.</div>
+</div>
+<div>
+<h2>04 / Sequence Editor</h2>
+<label>OPERATION</label>
+<select id="operation" onchange="toggleBase()">
+<option value="replace">Replace a nucleotide</option>
+<option value="insert">Insert a nucleotide</option>
+<option value="delete">Delete a nucleotide</option>
+</select>
+<label>POSITION (1-BASED)</label>
+<input id="position" type="number" min="1" value="7">
+<div id="baseField">
+<label>NEW NUCLEOTIDE</label>
+<select id="base"><option>A</option><option>T</option><option>G</option><option>C</option></select>
+</div>
+<button onclick="editSequence()">Simulate Modification →</button>
+<div id="editResult" class="result">Your changes will be simulated, not applied to biological material.</div>
+</div>
+</div>
+</section>
+
+<footer>GeneScope © 2026 | Synthetic DNA sequences only | Educational use</footer>
+</div>
+
+<script>
+let report=null;
+const $=id=>document.getElementById(id);
+function clean(s){return s.toUpperCase().replace(/\s/g,"")}
+function validate(s){return /^[ATGC]+$/.test(s)}
+function api(data){
+ return fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)})
+ .then(async r=>{let d=await r.json();if(!r.ok)throw Error(d.error||"Request failed");return d})
+}
+function updateStats(){
+ let r=clean($("reference").value),s=clean($("sample").value);
+ $("refLength").textContent=r.length;
+ $("sampleLength").textContent=s.length;
+ $("gc").textContent=s.length?((s.match(/[GC]/g)||[]).length/s.length*100).toFixed(1)+"%":"—";
+}
+async function analyze(){
+ $("error").textContent="";
+ let reference=clean($("reference").value),sample=clean($("sample").value);
+ if(!validate(reference)||!validate(sample)){
+ $("error").textContent="Please enter valid sequences using only A, T, G and C.";return;
+ }
+ try{
+ let d=await api({action:"compare",reference,sample});report=d;
+ let total=d.summary.substitutions+d.summary.insertions+d.summary.deletions;
+ $("difference").textContent=total;
+ $("summary").innerHTML=`<b class="${total?'warn':'good'}">${total?'Differences detected':'Sequences match'}</b><br>
+ Matches: ${d.summary.matches}<br>Substitutions: ${d.summary.substitutions}<br>
+ Insertions: ${d.summary.insertions}<br>Deletions: ${d.summary.deletions}`;
+ $("mutationTable").innerHTML="<table><thead><tr><th>TYPE</th><th>REFERENCE</th><th>SAMPLE</th><th>POSITION</th></tr></thead><tbody>"+
+ (d.mutations.length?d.mutations.map(m=>`<tr><td>${m.type}</td><td>${m.reference||"—"}</td><td>${m.sample||"—"}</td><td>${m.position}</td></tr>`).join(""):'<tr><td colspan="4">No differences found</td></tr>')+"</tbody></table>";
+ $("alignment").classList.remove("hidden");
+ $("alignment").innerHTML="<b>REFERENCE</b><br>"+d.alignment.reference+"<br><b>SAMPLE</b><br>"+d.alignment.sample;
+ updateStats();
+ }catch(e){$("error").textContent=e.message}
+}
+function example(){
+ $("reference").value="ATGCGTACGTTAGCTAGGCTA";
+ $("sample").value="ATGCGTTCGTTAGCTAGGCTA";
+ analyze();
+}
+async function findPattern(){
+ let sequence=clean($("sample").value),pattern=clean($("pattern").value);
+ try{
+ let d=await api({action:"find",sequence,pattern});
+ $("findResult").innerHTML=`<b class="good">${d.count} occurrence(s) found</b><br>Positions: ${d.positions.join(", ")||"None"}<br><small>Positions use 1-based indexing. Overlapping matches included.</small>`;
+ }catch(e){$("findResult").textContent=e.message}
+}
+function toggleBase(){$("baseField").classList.toggle("hidden",$("operation").value==="delete")}
+async function editSequence(){
+ let sequence=clean($("sample").value);
+ try{
+ let d=await api({action:"edit",sequence,type:$("operation").value,position:Number($("position").value),base:$("base").value});
+ $("editResult").innerHTML=`<span class="good">Simulation successful</span><br>Original: ${d.original}<br>Modified: ${d.modified}<br>${d.message}<br><button class="secondary" onclick="useModified('${d.modified}')">Use modified sequence</button>`;
+ }catch(e){$("editResult").textContent=e.message}
+}
+function useModified(s){$("sample").value=s;analyze()}
+function downloadReport(){
+ if(!report){alert("Analyze sequences first.");return}
+ let blob=new Blob([JSON.stringify(report,null,2)],{type:"application/json"});
+ let a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="genescope-report.json";a.click();URL.revokeObjectURL(a.href);
+}
+updateStats();analyze();
+</script>
+</body>
+</html>
